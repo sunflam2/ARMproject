@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThingSpeak Data</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        td {
+            width: 50%;
+            padding: 10px;
+        }
+        canvas {
+            width: 100% !important;
+            height: 200px !important;
+        }
+    </style>
+</head>
+<body>
+    <h1></h1>
+    
+    <table>
+        <tr>
+            <td>
+                <canvas id="plasticChart"></canvas>
+            </td>
+            <td>
+                <canvas id="paperChart"></canvas>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <canvas id="metalCanChart"></canvas>
+            </td>
+            <td>
+                <canvas id="othersChart"></canvas>
+            </td>
+        </tr>
+    </table>
+
+    <script>
+        const channelID = 2699038; // Replace with your channel ID
+        const UserFieldID = 2;
+        const url = `https://api.thingspeak.com/channels/${channelID}/fields/${UserFieldID}.json`;
+		
+		$('h1').text(`User Data for Field ${UserFieldID}`);
+		
+        $.getJSON(url, function(data) {
+            const counts = {
+                'Plastic Bottle': 0,
+                'Paper': 0,
+                'Metal Can': 0,
+                'Others': 0
+            };
+            const dates = [];
+            const dateCounts = {};
+			const pass = () => {} // for doing nothing
+			
+            // Iterate through each feed entry
+            data.feeds.forEach(feed => {
+                const fieldKey = `field${UserFieldID}`; // Dynamically create the field key
+                const entryDate = new Date(feed.created_at);
+                const formattedDate = `${(entryDate.getMonth() + 1).toString().padStart(2, '0')}/${entryDate.getDate().toString().padStart(2, '0')}`;
+
+                // Initialize counts for the date if not already done
+                if (!dateCounts[formattedDate]) {
+                    dateCounts[formattedDate] = {
+                        'Plastic Bottle': 0,
+                        'Paper': 0,
+                        'Metal Can': 0,
+                        'Others': 0
+                    };
+                    dates.push(formattedDate);
+                }
+
+                // Increment the respective count based on the field value
+                switch (feed[fieldKey]) {
+                    case '0':
+                        dateCounts[formattedDate]['Plastic Bottle']++;
+                        break;
+                    case '1':
+                        dateCounts[formattedDate]['Paper']++;
+                        break;
+                    case '2':
+                        dateCounts[formattedDate]['Metal Can']++;
+                        break;
+					case '3':
+						dateCounts[formattedDate]['Others']++;
+						break;
+                    default:
+                        pass();
+                }
+            });
+
+            // Prepare the data arrays for each category
+            const plasticCounts = dates.map(date => dateCounts[date]['Plastic Bottle']);
+            const paperCounts = dates.map(date => dateCounts[date]['Paper']);
+            const metalCounts = dates.map(date => dateCounts[date]['Metal Can']);
+            const othersCounts = dates.map(date => dateCounts[date]['Others']);
+
+            // Create line charts for each category
+            const createChart = (ctx, label, data) => {
+                return new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: dates,
+                        datasets: [{
+                            label: label,
+                            data: data,
+                            borderColor: getRandomColor(),
+                            fill: false,
+                            tension: 0.1 // Smooth the line
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Count'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
+            // Function to generate random color for lines
+            const getRandomColor = () => {
+                const letters = '0123456789ABCDEF';
+                let color = '#';
+                for (let i = 0; i < 6; i++) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+                return color;
+            };
+
+            createChart(document.getElementById('plasticChart').getContext('2d'), 'Plastic Bottle', plasticCounts);
+            createChart(document.getElementById('paperChart').getContext('2d'), 'Paper', paperCounts);
+            createChart(document.getElementById('metalCanChart').getContext('2d'), 'Metal Can', metalCounts);
+            createChart(document.getElementById('othersChart').getContext('2d'), 'Others', othersCounts);
+        });
+    </script>
+</body>
+</html>

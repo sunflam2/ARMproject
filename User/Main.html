@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThingSpeak Data</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        td {
+            width: 50%;
+            padding: 10px;
+        }
+        canvas {
+            width: 100% !important;
+            height: 200px !important;
+        }
+        nav {
+            margin-bottom: 20px;
+        }
+        nav a {
+            margin: 0 10px;
+            text-decoration: none;
+            color: #333;
+        }
+        nav a:hover {
+            color: #666;
+        }
+        @media (max-width: 768px) {
+            table, td {
+                display: block;
+                width: 100%;
+            }
+            td {
+                padding: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>ThingSpeak Data Overview</h1>
+    
+    <table>
+        <tr>
+            <td>
+                <canvas id="plasticChart"></canvas>
+            </td>
+            <td>
+                <canvas id="paperChart"></canvas>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <canvas id="metalCanChart"></canvas>
+            </td>
+            <td>
+                <canvas id="othersChart"></canvas>
+            </td>
+        </tr>
+    </table>
+
+    <script>
+        const channelID = 2699038; // Replace with your channel ID
+        const fieldIDs = [1, 2, 3]; // Field IDs for Plastic, Paper, Metal Cans
+
+        const chartData = {
+            plastic: [],
+            paper: [],
+            metalCan: [],
+            others: [],
+            dates: []
+        };
+		
+		const pass = () => {} // for doing nothing
+			
+        fetchAllFieldData()
+            .then(() => createCharts())
+            .catch(error => console.error(error));
+
+        async function fetchAllFieldData() {
+            for (const fieldID of fieldIDs) {
+                await fetchFieldData(fieldID);
+            }
+        }
+
+        function fetchFieldData(fieldID) {
+            const url = `https://api.thingspeak.com/channels/${channelID}/fields/${fieldID}.json`;
+            return $.getJSON(url, data => {
+                data.feeds.forEach(feed => {
+                    const entryDate = new Date(feed.created_at);
+                    // Format the date as YYYY-MM-DD to avoid ambiguity
+                    const formattedDate = `${(entryDate.getMonth() + 1).toString().padStart(2, '0')}/${entryDate.getDate().toString().padStart(2, '0')}`;
+
+                    if (!chartData.dates.includes(formattedDate)) {
+                        chartData.dates.push(formattedDate);
+                        // Initialize count arrays for new dates
+                        chartData.plastic.push(0);
+                        chartData.paper.push(0);
+                        chartData.metalCan.push(0);
+                        chartData.others.push(0);
+                    }
+
+                    const index = chartData.dates.indexOf(formattedDate);
+
+                    const fieldValue = feed[`field${fieldID}`]; // Access the field value directly
+
+                    if (fieldValue === '0') {
+                        chartData.plastic[index]++;
+                    } else if (fieldValue === '1') {
+                        chartData.paper[index]++;
+                    } else if (fieldValue === '2') {
+                        chartData.metalCan[index]++;
+                    } else if (fieldValue === '3'){
+                        chartData.others[index]++;
+                    } else {
+						pass();
+					}
+                });
+            }).fail((jqxhr, textStatus, error) => {
+                console.error(`Request to ThingSpeak failed: ${textStatus}, ${error}`);
+            });
+        }
+
+        function createCharts() {
+            const createChart = (ctx, label, data) => {
+                return new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: chartData.dates,
+                        datasets: [{
+                            label: label,
+                            data: data,
+                            borderColor: getRandomColor(),
+                            fill: false,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Count'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
+            createChart(document.getElementById('plasticChart').getContext('2d'), 'Plastic Bottle', chartData.plastic);
+            createChart(document.getElementById('paperChart').getContext('2d'), 'Paper', chartData.paper);
+            createChart(document.getElementById('metalCanChart').getContext('2d'), 'Metal Can', chartData.metalCan);
+            createChart(document.getElementById('othersChart').getContext('2d'), 'Others', chartData.others);
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+    </script>
+</body>
+</html>
