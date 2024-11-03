@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThingSpeak Data</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        td {
+            width: 50%;
+            padding: 10px;
+        }
+        canvas {
+            width: 100% !important;
+            height: 200px !important;
+        }
+        button {
+            margin: 20px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1 id="title"></h1>
+    <button id="toggleMode">View Daily Values</button>
+    
+    <table>
+        <tr>
+            <td><canvas id="plasticChart"></canvas></td>
+            <td><canvas id="paperChart"></canvas></td>
+        </tr>
+        <tr>
+            <td><canvas id="metalCanChart"></canvas></td>
+            <td><canvas id="othersChart"></canvas></td>
+        </tr>
+    </table>
+
+    <script>
+        const channelID = 2699038; // Replace with your channel ID
+        const userFieldID = 2;
+        const url = `https://api.thingspeak.com/channels/${channelID}/fields/${userFieldID}.json`;
+
+        let isCumulative = true; // Start with cumulative sum
+        let plasticChart, paperChart, metalCanChart, othersChart;
+        let dates, plasticCounts, paperCounts, metalCounts, othersCounts;
+
+        // Set the title
+        $('#title').text(`User Data for Field ${userFieldID}`);
+
+        const parseData = (data) => {
+            const dateCounts = {};
+            const dates = [];
+
+            // Iterate through each feed entry
+            data.feeds.forEach(feed => {
+                const fieldKey = `field${userFieldID}`;
+                const entryDate = new Date(feed.created_at);
+                const formattedDate = `${(entryDate.getMonth() + 1).toString().padStart(2, '0')}/${entryDate.getDate().toString().padStart(2, '0')}`;
+
+                if (!dateCounts[formattedDate]) {
+                    dateCounts[formattedDate] = {
+                        'Plastic Bottle': 0,
+                        'Paper': 0,
+                        'Metal Can': 0,
+                        'Others': 0
+                    };
+                    dates.push(formattedDate);
+                }
+
+                // Increment the respective count based on the field value
+                switch (feed[fieldKey]) {
+                    case '0': dateCounts[formattedDate]['Plastic Bottle']++; break;
+                    case '1': dateCounts[formattedDate]['Paper']++; break;
+                    case '2': dateCounts[formattedDate]['Metal Can']++; break;
+                    case '3': dateCounts[formattedDate]['Others']++; break;
+                }
+            });
+
+            // Prepare the data arrays for each category
+            const plasticCounts = dates.map(date => dateCounts[date]['Plastic Bottle']);
+            const paperCounts = dates.map(date => dateCounts[date]['Paper']);
+            const metalCounts = dates.map(date => dateCounts[date]['Metal Can']);
+            const othersCounts = dates.map(date => dateCounts[date]['Others']);
+
+            return { dates, plasticCounts, paperCounts, metalCounts, othersCounts };
+        };
+
+        const calculateCumulative = (dataArray) => {
+            return dataArray.reduce((acc, value, index) => {
+                acc.push((acc[index - 1] || 0) + value);
+                return acc;
+            }, []);
+        };
+
+        const createChart = (ctx, label, data) => {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: getRandomColor(),
+                        fill: false,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    }
+                }
+            });
+        };
+
+        const getRandomColor = () => {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        };
+
+        const updateCharts = () => {
+            // Destroy existing charts if they exist
+            if (plasticChart) plasticChart.destroy();
+            if (paperChart) paperChart.destroy();
+            if (metalCanChart) metalCanChart.destroy();
+            if (othersChart) othersChart.destroy();
+
+            // Decide which data to use (daily or cumulative)
+            const plasticData = isCumulative ? calculateCumulative(plasticCounts) : plasticCounts;
+            const paperData = isCumulative ? calculateCumulative(paperCounts) : paperCounts;
+            const metalData = isCumulative ? calculateCumulative(metalCounts) : metalCounts;
+            const othersData = isCumulative ? calculateCumulative(othersCounts) : othersCounts;
+
+            // Create new charts
+            plasticChart = createChart(document.getElementById('plasticChart').getContext('2d'), 'Plastic Bottle', plasticData);
+            paperChart = createChart(document.getElementById('paperChart').getContext('2d'), 'Paper', paperData);
+            metalCanChart = createChart(document.getElementById('metalCanChart').getContext('2d'), 'Metal Can', metalData);
+            othersChart = createChart(document.getElementById('othersChart').getContext('2d'), 'Others', othersData);
+        };
+
+        $.getJSON(url, function(data) {
+            const parsedData = parseData(data);
+            dates = parsedData.dates;
+            plasticCounts = parsedData.plasticCounts;
+            paperCounts = parsedData.paperCounts;
+            metalCounts = parsedData.metalCounts;
+            othersCounts = parsedData.othersCounts;
+
+            // Initialize charts with cumulative values
+            updateCharts();
+        });
+
+        // Toggle the chart mode between daily and cumulative
+        $('#toggleMode').on('click', function() {
+            isCumulative = !isCumulative;
+
+            // Update button text
+            $(this).text(isCumulative ? 'View Daily Values' : 'View Cumulative Sum');
+
+            // Update the charts
+            updateCharts();
+        });
+    </script>
+</body>
+</html>
